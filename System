@@ -1,0 +1,75 @@
+import mysql.connector
+from mysql.connector import Error
+from mysql.connector.errors import IntegrityError
+import bcrypt
+import subprocess
+
+def get_hwid():
+    try:
+        return str(subprocess.check_output('wmic csproduct get uuid'), 'utf-8').split('\n')[1].strip()
+    except subprocess.SubprocessError as e:
+        print("Error obtaining HWID:", e)
+        return None
+
+try:
+    connection = mysql.connector.connect(
+        host='localhost',
+        database='users',
+        user='root',
+        password=''
+    )
+
+    if connection.is_connected():
+        print("1. Make account")
+        print("2. Login into account")
+        choose = input()
+
+        cursor = connection.cursor()
+        pchwid = get_hwid()
+
+        if int(choose) == 1:
+            create_user = input("Input username: ")
+            create_pass = input("Input password: ")
+            salt = bcrypt.gensalt()
+            hashed_pass = bcrypt.hashpw(create_pass.encode(), salt)
+            try:
+                sql = "INSERT INTO login (username, password, hwid) VALUES (%s, %s, %s)"
+                cursor.execute(sql, (create_user, hashed_pass, pchwid))
+                connection.commit()
+                print("Account created successfully.")
+            except IntegrityError as e:
+                print("Error creating account:", e)
+
+        elif int(choose) == 2:
+            print("----------------------------")
+            username = input("Input your username: ")
+            password = input("Input your password: ")
+            print("----------------------------")
+            sql_query = "SELECT * from login WHERE username = %s"
+            cursor.execute(sql_query, (username,))
+
+            row = cursor.fetchone()
+            if row and bcrypt.checkpw(password.encode(), row[2].encode()):
+                uid = row[0]
+                hwid = row[3]
+                if pchwid == hwid:
+                    print("UID: " + str(uid))
+                    print("Username: " + username)
+                    print("HWID: " + hwid)
+                else:
+                    print("Hwid mismatch.")
+            else:
+                print("Invalid username/password, try again!")
+
+        else:
+            print("Invalid choice. Please select 1 or 2.")
+    else:
+        print("Connection to MySQL failed.")
+
+except Error as err:
+    print("Error while connecting to MySQL:", err)
+
+finally:
+    if connection.is_connected():
+        cursor.close()
+        connection.close()
